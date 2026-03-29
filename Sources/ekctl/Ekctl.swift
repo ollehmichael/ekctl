@@ -340,17 +340,30 @@ struct AddReminder: ParsableCommand {
     @Option(name: .long, help: "Optional notes.")
     var notes: String?
 
+    @Flag(name: .long, help: "Create as all-day reminder (no specific time). Accepts YYYY-MM-DD for --due.")
+    var allDay: Bool = false
+
     func run() throws {
         let manager = EventKitManager()
         try manager.requestAccess()
 
         var dueDate: Date?
         if let due = due {
-            guard let parsed = ISO8601DateFormatter().date(from: due) else {
-                print(JSONOutput.error("Invalid --due date format. Use ISO8601.").toJSON())
+            if let parsed = ISO8601DateFormatter().date(from: due) {
+                dueDate = parsed
+            } else if allDay {
+                let df = DateFormatter()
+                df.dateFormat = "yyyy-MM-dd"
+                df.timeZone = .current
+                guard let parsed = df.date(from: due) else {
+                    print(JSONOutput.error("Invalid --due date format. Use YYYY-MM-DD or ISO8601.").toJSON())
+                    throw ExitCode.failure
+                }
+                dueDate = parsed
+            } else {
+                print(JSONOutput.error("Invalid --due date format. Use ISO8601 (e.g., 2026-03-30T09:00:00+08:00).").toJSON())
                 throw ExitCode.failure
             }
-            dueDate = parsed
         }
 
         var priorityInt: Int = 0
@@ -368,7 +381,8 @@ struct AddReminder: ParsableCommand {
             title: title,
             dueDate: dueDate,
             priority: priorityInt,
-            notes: notes
+            notes: notes,
+            allDay: allDay
         )
         print(result.toJSON())
     }
@@ -502,17 +516,30 @@ struct UpdateReminder: ParsableCommand {
     @Option(name: .long, help: "Mark as completed (true/false).")
     var completed: Bool?
 
+    @Option(name: .long, help: "Set all-day status (true/false).")
+    var allDay: Bool?
+
     func run() throws {
         let manager = EventKitManager()
         try manager.requestAccess()
 
         var dueDate: Date?
         if let due = due {
-            guard let parsed = ISO8601DateFormatter().date(from: due) else {
-                print(JSONOutput.error("Invalid --due date format. Use ISO8601.").toJSON())
+            if let parsed = ISO8601DateFormatter().date(from: due) {
+                dueDate = parsed
+            } else if allDay == true {
+                let df = DateFormatter()
+                df.dateFormat = "yyyy-MM-dd"
+                df.timeZone = .current
+                guard let parsed = df.date(from: due) else {
+                    print(JSONOutput.error("Invalid --due date format. Use YYYY-MM-DD or ISO8601.").toJSON())
+                    throw ExitCode.failure
+                }
+                dueDate = parsed
+            } else {
+                print(JSONOutput.error("Invalid --due date format. Use ISO8601 (e.g., 2026-03-30T09:00:00+08:00).").toJSON())
                 throw ExitCode.failure
             }
-            dueDate = parsed
         }
 
         var priorityInt: Int?
@@ -530,7 +557,8 @@ struct UpdateReminder: ParsableCommand {
             dueDate: dueDate,
             priority: priorityInt,
             notes: notes,
-            completed: completed
+            completed: completed,
+            allDay: allDay
         )
         print(result.toJSON())
     }

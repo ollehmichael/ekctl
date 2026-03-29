@@ -518,7 +518,8 @@ public class EventKitManager {
         title: String,
         dueDate: Date?,
         priority: Int,
-        notes: String?
+        notes: String?,
+        allDay: Bool = false
     ) -> JSONOutput {
         guard let calendar = eventStore.calendar(withIdentifier: listID) else {
             return JSONOutput.error("Reminder list not found with ID: \(listID)")
@@ -535,10 +536,10 @@ public class EventKitManager {
         reminder.notes = notes
 
         if let dueDate = dueDate {
-            reminder.dueDateComponents = Calendar.current.dateComponents(
-                [.year, .month, .day, .hour, .minute, .second],
-                from: dueDate
-            )
+            let components: Set<Calendar.Component> = allDay
+                ? [.year, .month, .day]
+                : [.year, .month, .day, .hour, .minute, .second]
+            reminder.dueDateComponents = Calendar.current.dateComponents(components, from: dueDate)
         }
 
         do {
@@ -560,7 +561,8 @@ public class EventKitManager {
         dueDate: Date?,
         priority: Int?,
         notes: String?,
-        completed: Bool?
+        completed: Bool?,
+        allDay: Bool? = nil
     ) -> JSONOutput {
         guard let reminder = eventStore.calendarItem(withIdentifier: reminderID) as? EKReminder else {
             return JSONOutput.error("Reminder not found with ID: \(reminderID)")
@@ -574,10 +576,22 @@ public class EventKitManager {
             reminder.completionDate = completed ? Date() : nil
         }
         if let dueDate = dueDate {
-            reminder.dueDateComponents = Calendar.current.dateComponents(
-                [.year, .month, .day, .hour, .minute, .second],
-                from: dueDate
-            )
+            // allDay: use provided value; if nil, preserve the existing all-day state
+            let existingIsAllDay = reminder.dueDateComponents.map {
+                $0.hour == nil && $0.minute == nil
+            } ?? false
+            let makeAllDay = allDay ?? existingIsAllDay
+            let components: Set<Calendar.Component> = makeAllDay
+                ? [.year, .month, .day]
+                : [.year, .month, .day, .hour, .minute, .second]
+            reminder.dueDateComponents = Calendar.current.dateComponents(components, from: dueDate)
+        } else if let allDay = allDay, let existing = reminder.dueDateComponents,
+                  let date = Calendar.current.date(from: existing) {
+            // allDay flag changed but no new date: re-derive components from existing date
+            let components: Set<Calendar.Component> = allDay
+                ? [.year, .month, .day]
+                : [.year, .month, .day, .hour, .minute, .second]
+            reminder.dueDateComponents = Calendar.current.dateComponents(components, from: date)
         }
 
         do {
@@ -812,8 +826,18 @@ public class EventKitManager {
 
         if let dueDateComponents = reminder.dueDateComponents,
            let dueDate = Calendar.current.date(from: dueDateComponents) {
-            dict["dueDate"] = formatter.string(from: dueDate)
+            let isAllDay = dueDateComponents.hour == nil && dueDateComponents.minute == nil
+            dict["allDay"] = isAllDay
+            if isAllDay {
+                let df = DateFormatter()
+                df.dateFormat = "yyyy-MM-dd"
+                df.timeZone = .current
+                dict["dueDate"] = df.string(from: dueDate)
+            } else {
+                dict["dueDate"] = formatter.string(from: dueDate)
+            }
         } else {
+            dict["allDay"] = false
             dict["dueDate"] = NSNull()
         }
 
